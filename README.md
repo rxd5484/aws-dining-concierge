@@ -217,10 +217,6 @@ This project demonstrates more than a CRUD app:
 - CI and automated tests
 - production-aware cloud cost choices
 
-## Resume bullet examples
-
-- Built an event-driven dining recommendation platform using **AWS Lambda, API Gateway, EventBridge, SQS, DynamoDB, OpenSearch, and SES**, decoupling request ingestion from asynchronous processing with retry and dead-letter handling.
-- Developed a **Next.js/Vercel** frontend and REST API workflow with input validation, request-state polling, location normalization, and graceful failure handling across distributed cloud services.
 
 ## Cost note
 
