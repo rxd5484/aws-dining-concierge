@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Dining Concierge backend
+
+Parameters:
+  SesFromEmail:
+    Type: String
+    Default: ''
+    Description: Verified SES sender. Leave blank to disable email while testing.
+  OpenSearchEndpoint:
+    Type: String
+    Default: ''
+    Description: Optional existing OpenSearch domain endpoint. Leave blank to use bundled demo data.
+  OpenSearchIndex:
+    Type: String
+    Default: restaurants
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 256
+    Architectures: [arm64]
+    Environment:
+      Variables:
+        REQUESTS_TABLE: !Ref RequestsTable
+        EVENT_BUS_NAME: !Ref DiningEventBus
+        SES_FROM_EMAIL: !Ref SesFromEmail
+        OPENSEARCH_ENDPOINT: !Ref OpenSearchEndpoint
+        OPENSEARCH_INDEX: !Ref OpenSearchIndex
+
+Resources:
+  DiningApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'content-type'"
+        AllowOrigin: "'*'"
+
+  RequestsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  DiningEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub dining-concierge-${AWS::StackName}
+
+  DiningDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  DiningQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DiningDLQ.Arn
+        maxReceiveCount: 3
+
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref DiningQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt DiningQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt DiningEventRule.Arn
+
+  DiningEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref DiningEventBus
+      EventPattern:
+        source: [dining.concierge]
+        detail-type: [DiningRequestSubmitted]
+      Targets:
+        - Arn: !GetAtt DiningQueue.Arn
+          Id: DiningQueueTarget
+
+  RequestHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: request_handler.app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestsTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref DiningEventBus
+      Events:
+        SubmitRequest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DiningApi
+            Path: /recommendations
+            Method: POST
+        GetRequest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DiningApi
+            Path: /requests/{request_id}
+            Method: GET
+
+  DiningWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: worker.app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RequestsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - es:ESHttpGet
+                - es:ESHttpPost
+              Resource: '*'
+      Events:
+        QueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt DiningQueue.Arn
+            BatchSize: 5
+
+Outputs:
+  ApiUrl:
+    Description: Base API URL for the Vercel frontend
+    Value: !Sub https://${DiningApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
+  RequestsTableName:
+    Value: !Ref RequestsTable
+  QueueUrl:
+    Value: !Ref DiningQueue
