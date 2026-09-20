@@ -69,8 +69,28 @@ export default function Home() {
 
   async function runDemo() {
     await new Promise((resolve) => setTimeout(resolve, 900));
-    const sameCuisine = demoRestaurants.filter((r) => r.cuisine === form.cuisine);
-    const picks = (sameCuisine.length ? sameCuisine : demoRestaurants).slice(0, 3);
+
+    const exactMatches = demoRestaurants.filter(
+      (r) =>
+        r.cuisine === form.cuisine &&
+        (form.location === "New York City" || r.location === form.location)
+    );
+
+    const cuisineMatches = demoRestaurants.filter(
+      (r) => r.cuisine === form.cuisine
+    );
+
+    const locationMatches = demoRestaurants.filter(
+      (r) => form.location === "New York City" || r.location === form.location
+    );
+
+    const picks =
+      exactMatches.length > 0
+        ? exactMatches.slice(0, 3)
+        : cuisineMatches.length > 0
+        ? cuisineMatches.slice(0, 3)
+        : locationMatches.slice(0, 3);
+
     setResults(picks);
     setMessage("Demo mode: recommendations generated locally. Connect the AWS API to enable the full asynchronous workflow and SES email delivery.");
     setStatus("done");
