@@ -1,5 +1,5 @@
 # Serverless Dining Concierge
-
+video link - https://youtu.be/xghHX1KSuSk
 A full-stack, event-driven restaurant recommendation application built for a software-engineering portfolio. The frontend is a **Next.js** app designed for **Vercel**, while the backend uses **AWS API Gateway, Lambda, EventBridge, SQS, DynamoDB, OpenSearch, and SES**.
 
 The app accepts a location, cuisine, date, time, party size, and email. It validates the request, queues it asynchronously, finds restaurant recommendations, stores the result, and optionally emails the recommendations.
